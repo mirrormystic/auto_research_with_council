@@ -1,22 +1,25 @@
-"""OpenRouter API client with optional MPP/Tempo payment support."""
+"""OpenRouter API client with optional Tempo/MPP payment support."""
 
 import asyncio
 import json
 import os
+import subprocess
 import time
+from pathlib import Path
 
 import httpx
 
 from council.logger import log
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# MPP-enabled OpenRouter endpoint (set via OPENROUTER_MPP_URL env or council.yaml)
-OPENROUTER_MPP_URL = os.environ.get("OPENROUTER_MPP_URL", "https://openrouter.mpp.tempo.xyz/api/v1/chat/completions")
+OPENROUTER_MPP_URL = "https://openrouter.mpp.tempo.xyz/v1/chat/completions"
+TEMPO_KEYS_PATH = Path.home() / ".tempo" / "wallet" / "keys.toml"
+TEMPO_BIN = str(Path.home() / ".tempo" / "bin" / "tempo")
 
 
 def _use_tempo() -> bool:
-    """Check if Tempo/MPP payment is configured."""
-    return bool(os.environ.get("TEMPO_PRIVATE_KEY"))
+    """Check if Tempo wallet is logged in."""
+    return TEMPO_KEYS_PATH.exists() and not os.environ.get("OPENROUTER_API_KEY")
 
 
 def get_api_key() -> str:
@@ -24,30 +27,46 @@ def get_api_key() -> str:
     if not key and not _use_tempo():
         raise RuntimeError(
             "Set OPENROUTER_API_KEY for direct access, or "
-            "TEMPO_PRIVATE_KEY for MPP/Tempo payment"
+            "run `tempo wallet login` for MPP payment"
         )
     return key
 
 
-async def _make_tempo_client(timeout: float) -> httpx.AsyncClient:
-    """Create an httpx client with MPP/Tempo payment transport."""
-    try:
-        from mpp.client import Client as MppClient
-        from mpp.methods.tempo import tempo, TempoAccount, ChargeIntent
-    except ImportError:
-        raise RuntimeError(
-            "pympp[tempo] is required for Tempo payments. "
-            "Install with: pip install 'pympp[tempo]'"
-        )
+async def _call_via_tempo(body: dict, timeout: float) -> dict:
+    """Call OpenRouter via `tempo request` CLI."""
+    url = os.environ.get("OPENROUTER_MPP_URL", OPENROUTER_MPP_URL)
+    body_json = json.dumps(body)
 
-    key = os.environ["TEMPO_PRIVATE_KEY"]
-    account = TempoAccount.from_key(key)
-    log.info("Using Tempo/MPP payment (account: %s)", account)
+    log.info("Calling via tempo request: %s", url)
+    proc = await asyncio.create_subprocess_exec(
+        TEMPO_BIN, "request", "-X", "POST",
+        "--json", body_json,
+        url,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
-    # Return the MppClient which wraps httpx with 402 payment handling
-    client = MppClient(methods=[tempo(account=account, intents={"charge": ChargeIntent()})])
-    await client.__aenter__()
-    return client
+    if proc.returncode != 0:
+        err = stderr.decode().strip()
+        raise RuntimeError(f"tempo request failed (rc={proc.returncode}): {err}")
+
+    return json.loads(stdout.decode())
+
+
+async def _call_via_api_key(body: dict, timeout: float) -> dict:
+    """Call OpenRouter via API key."""
+    api_key = get_api_key()
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/council",
+        "X-Title": "Council - Multi-Model Research",
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(OPENROUTER_URL, headers=headers, json=body)
+        resp.raise_for_status()
+        return resp.json()
 
 
 async def call_model(
@@ -71,40 +90,18 @@ async def call_model(
         if "anthropic" in model:
             body["transforms"] = ["middle-out"]
 
-    log.debug("Calling model=%s prompt_len=%d via=%s", model, len(prompt), "tempo" if use_tempo else "api-key")
+    method = "tempo" if use_tempo else "api-key"
+    log.debug("Calling model=%s prompt_len=%d via=%s", model, len(prompt), method)
     start = time.monotonic()
 
     if use_tempo:
-        url = os.environ.get("OPENROUTER_MPP_URL", OPENROUTER_MPP_URL)
-        headers = {
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/council",
-            "X-Title": "Council - Multi-Model Research",
-        }
-        # MPP client handles 402 payment automatically — no API key needed
-        client = await _make_tempo_client(timeout)
-        try:
-            resp = await client.post(url, headers=headers, json=body)
-            resp.raise_for_status()
-            data = resp.json()
-        finally:
-            await client.__aexit__(None, None, None)
+        data = await _call_via_tempo(body, timeout)
     else:
-        api_key = get_api_key()
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/council",
-            "X-Title": "Council - Multi-Model Research",
-        }
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(OPENROUTER_URL, headers=headers, json=body)
-            resp.raise_for_status()
-            data = resp.json()
+        data = await _call_via_api_key(body, timeout)
 
     elapsed = time.monotonic() - start
     text = data["choices"][0]["message"]["content"]
-    log.info("Model %s responded in %.1fs, response_len=%d", model, elapsed, len(text))
+    log.info("Model %s responded in %.1fs, response_len=%d via %s", model, elapsed, len(text), method)
     log.info("Model %s response:\n%s", model, text)
     return model, text, elapsed
 
@@ -132,7 +129,6 @@ async def call_all_models(
 
 def extract_json(text: str) -> dict | None:
     """Extract JSON from a model response that might have markdown fences."""
-    # Try direct parse first
     try:
         result = json.loads(text)
         log.debug("extract_json: direct parse succeeded")
@@ -140,7 +136,6 @@ def extract_json(text: str) -> dict | None:
     except json.JSONDecodeError:
         pass
 
-    # Try extracting from ```json ... ``` blocks
     if "```json" in text:
         start = text.index("```json") + 7
         end = text.index("```", start)
@@ -149,10 +144,8 @@ def extract_json(text: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    # Try extracting from ``` ... ``` blocks
     if "```" in text:
         start = text.index("```") + 3
-        # Skip optional language identifier on same line
         newline = text.index("\n", start)
         start = newline + 1
         end = text.index("```", start)
@@ -161,7 +154,6 @@ def extract_json(text: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    # Try finding first { to last }
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace != -1 and last_brace != -1:
