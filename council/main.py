@@ -184,7 +184,7 @@ def cli() -> None:
 
     run_parser = sub.add_parser("run", help="Run the council loop")
     run_parser.add_argument("--challenge", type=str, default=".", help="Path to challenge folder")
-    run_parser.add_argument("--models", type=str, default=None, help="Comma-separated model list")
+    run_parser.add_argument("--models", type=str, required=True, help="Comma-separated model list (e.g. 'anthropic/claude-opus-4-6,openai/gpt-5.4,xai/grok-4.20')")
     run_parser.add_argument("--rounds", type=int, default=None, help="Deliberation rounds")
     payment = run_parser.add_mutually_exclusive_group(required=True)
     payment.add_argument("--tempo", action="store_true", help="Pay via Tempo MPP (requires `tempo wallet login`)")
