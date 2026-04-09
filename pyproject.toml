@@ -20,6 +20,9 @@ package = true
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["council*", "next_version_demo*"]
+
 [project.scripts]
 council = "council.main:cli"
 council-demo = "next_version_demo.app:main"
