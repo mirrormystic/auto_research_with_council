@@ -14,7 +14,7 @@ from textual.widgets import (
 from textual.reactive import reactive
 from textual import on
 
-from demo.data import (
+from next_version_demo.data import (
     EXPERIMENTS, MODELS, PROPOSALS_ROUND, CRITIQUES, VOTES, FAKE_CHAT_RESPONSES,
 )
 
