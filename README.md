@@ -1,6 +1,6 @@
-# Council
+# Auto Research with Council
 
-**Autonomous research, powered by a committee of LLMs.**
+**Multi-model autonomous research. Describe a problem, let a committee of LLMs solve it overnight.**
 
 Give it any optimization problem — a website URL and a simulator repo — and it sets up the challenge, then runs an infinite loop where multiple AI models (Claude, GPT, Grok, Gemini, DeepSeek) brainstorm ideas, critique each other anonymously, vote on what to try, implement the winner, test it, and repeat. You go to sleep, wake up to results.
 
@@ -9,6 +9,86 @@ Two tools:
 2. **`council run`** — runs the multi-model research loop on any challenge
 
 Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), but instead of one model iterating alone, a council of models from different providers collaborates to find solutions faster.
+
+## Flow
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     CREATE CHALLENGE                             │
+│                                                                  │
+│  "The problem is at https://... the repo is https://..."         │
+│                          │                                       │
+│                          ▼                                       │
+│              Claude Code reads URLs,                             │
+│              clones repo, creates                                │
+│              program.md + setup.sh                               │
+│                          │                                       │
+│                          ▼                                       │
+│              Challenge folder ready                              │
+└──────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     COUNCIL RUN (loops forever)                  │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ CONTEXT — load all exp/* branches, best score, target file │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ PROPOSE — each model suggests 3 ideas (anonymous)          │  │
+│  │                                                            │  │
+│  │   Claude: "try inventory-based fee skewing"                │  │
+│  │   GPT:    "use hazard state machine for arb detection"     │  │
+│  │   Gemini: "adaptive volatility thresholds"                 │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ CRITIQUE — each model reviews all proposals (anonymous)    │  │
+│  │                                                            │  │
+│  │   "Proposal #2 is strong but threshold needs tuning"       │  │
+│  │   "Proposal #1 overlaps with exp/388, which scored poorly" │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ PROPOSE 2 — revised ideas informed by critiques            │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ CRITIQUE 2 — second round of review                        │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ VOTE — each model scores 0-100                             │  │
+│  │                                                            │  │
+│  │   #1  ████████████████░░░░  160/200  "hazard pulse"        │  │
+│  │   #2  █████████████░░░░░░░  130/200  "inventory skew"      │  │
+│  │   #3  ██████████░░░░░░░░░░  105/200  "vol thresholds"      │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ IMPLEMENT — Claude Code writes the code change             │  │
+│  │                                                            │  │
+│  │   Reading: strategy.sol                                    │  │
+│  │   Editing: strategy.sol                                    │  │
+│  │   $ uv run amm-match validate strategy.sol                 │  │
+│  │   ✓ Compiled  ✓ Validated                                  │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ TEST — run evaluation                                      │  │
+│  │                                                            │  │
+│  │   Score: 412.83  ← NEW BEST                                │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           ▼                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ RECORD — git branch exp/412-hazard-pulse                   │  │
+│  │          commit: score, proposer, votes, critiques, diff   │  │
+│  └────────────────────────┬───────────────────────────────────┘  │
+│                           │                                      │
+│                           └──────────── loop ◄───────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ## Quick Start
 
