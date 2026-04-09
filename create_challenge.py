@@ -13,7 +13,6 @@ Usage:
 """
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -92,68 +91,21 @@ IMPORTANT:
 """
 
 
-def stream_claude(prompt: str, cwd: str) -> int:
-    """Run Claude Code with streaming JSON output, print events live."""
-    proc = subprocess.Popen(
-        [
-            "claude", "-p", prompt,
-            "--allowedTools", "Edit,Write,Read,Bash,WebFetch",
-            "--output-format", "stream-json",
-            "--verbose",
-        ],
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=None,  # let stderr go to terminal
-        text=True,
-    )
-
-    for line in proc.stdout:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            print(line)
-            continue
-
-        etype = event.get("type", "")
-
-        if etype == "assistant":
-            # Text output from Claude
-            msg = event.get("message", {})
-            content = msg.get("content", "")
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "text":
-                            print(f"\033[37m{block['text']}\033[0m")
-                        elif block.get("type") == "tool_use":
-                            tool = block.get("name", "")
-                            inp = block.get("input", {})
-                            if tool == "Bash":
-                                print(f"\033[36m$ {inp.get('command', '')}\033[0m")
-                            elif tool == "Write":
-                                print(f"\033[33m  Writing: {inp.get('file_path', '')}\033[0m")
-                            elif tool == "Edit":
-                                print(f"\033[33m  Editing: {inp.get('file_path', '')}\033[0m")
-                            elif tool == "Read":
-                                print(f"\033[34m  Reading: {inp.get('file_path', '')}\033[0m")
-                            elif tool == "WebFetch":
-                                print(f"\033[35m  Fetching: {inp.get('url', '')}\033[0m")
-                            else:
-                                print(f"\033[36m  [{tool}]\033[0m")
-            elif isinstance(content, str) and content:
-                print(f"\033[37m{content}\033[0m")
-
-        elif etype == "result":
-            # Final result
-            result_text = event.get("result", "")
-            if result_text:
-                print(f"\n\033[32m{result_text}\033[0m")
-
-    proc.wait()
-    return proc.returncode
+def run_claude(prompt: str, cwd: str) -> int:
+    """Run Claude Code in print mode. Output goes straight to terminal."""
+    try:
+        result = subprocess.run(
+            [
+                "claude", "-p", prompt,
+                "--allowedTools", "Edit,Write,Read,Bash,WebFetch",
+            ],
+            cwd=cwd,
+            timeout=600,
+        )
+        return result.returncode
+    except subprocess.TimeoutExpired:
+        print("Claude Code timed out after 600s")
+        return -1
 
 
 def main():
@@ -191,7 +143,7 @@ def main():
     print(f"  Creating challenge at: {output}")
     print(f"{'─' * 60}\n")
 
-    rc = stream_claude(prompt, str(output))
+    rc = run_claude(prompt, str(output))
 
     print(f"\n{'─' * 60}")
 

@@ -110,33 +110,24 @@ def context_info(
 
 
 def prompt_preview(phase_name: str, prompt: str) -> str:
-    """Show the full prompt being sent to models, with colored sections."""
+    """Show a compact summary of what's being sent to models."""
     lines = prompt.split("\n")
-    colored_lines = []
+    summary_lines = []
 
     for line in lines:
         stripped = line.strip()
+        # Show section headers
         if line.startswith("# "):
-            # Section headers
-            colored_lines.append(f"  {BOLD}{YELLOW}─── {stripped.lstrip('# ')} ───{RESET}")
+            summary_lines.append(f"  {BOLD}{YELLOW}─── {stripped.lstrip('# ')} ───{RESET}")
+        # Show branch names (one line each)
         elif stripped.startswith("=== exp/"):
-            colored_lines.append(f"  {CYAN}{stripped}{RESET}")
-        elif stripped.startswith("=="):
-            colored_lines.append(f"  {WHITE}{stripped}{RESET}")
+            summary_lines.append(f"  {CYAN}{stripped}{RESET}")
+        # Show proposal headers
         elif stripped.startswith("## Proposal"):
-            colored_lines.append(f"  {BLUE}{stripped}{RESET}")
-        elif stripped.startswith("```"):
-            colored_lines.append(f"  {DIM}{stripped}{RESET}")
-        elif stripped.startswith("---"):
-            colored_lines.append(f"  {DIM}{stripped}{RESET}")
-        elif stripped.startswith("diff --git"):
-            colored_lines.append(f"  {MAGENTA}{stripped}{RESET}")
-        elif stripped.startswith("+") and not stripped.startswith("+++"):
-            colored_lines.append(f"  {GREEN}{stripped}{RESET}")
-        elif stripped.startswith("-") and not stripped.startswith("---"):
-            colored_lines.append(f"  {RED}{stripped}{RESET}")
-        elif stripped:
-            colored_lines.append(f"  {DIM}{stripped}{RESET}")
+            summary_lines.append(f"  {BLUE}{stripped}{RESET}")
+        # Show the task instruction
+        elif stripped.startswith("You are one member") or stripped.startswith("Review every") or stripped.startswith("Score every") or stripped.startswith("You have seen"):
+            summary_lines.append(f"  {WHITE}{stripped[:100]}{RESET}")
 
     header = f"{ts()} {BOLD}{MAGENTA}PROMPT → {phase_name}{RESET}  {DIM}({len(prompt):,} chars){RESET}"
-    return header + "\n" + "\n".join(colored_lines)
+    return header + "\n" + "\n".join(summary_lines)
