@@ -31,15 +31,61 @@ Each experiment is recorded as a git branch with a detailed commit message: the 
 ```bash
 # Install
 uv sync
+```
 
-# Run with Tempo (MPP payments, no API key needed)
+### Option A: Pay with Tempo MPP (no API key needed)
+
+```bash
+# Install Tempo CLI and log in (one-time)
+curl -fsSL https://tempo.xyz/install | bash
+tempo wallet login
+tempo wallet fund
+
+# Run the council
 uv run council run --tempo \
-  --models "anthropic/claude-sonnet-4-6,openai/gpt-4o,xai/grok-3,google/gemini-2.5-pro" \
+  --models "anthropic/claude-sonnet-4-6,openai/gpt-4o,google/gemini-2.5-pro" \
+  --challenge ./examples/amm-challenge
+```
+
+### Option B: Pay with OpenRouter API key
+
+```bash
+uv run council run --openrouter-key sk-or-v1-... \
+  --models "anthropic/claude-sonnet-4-6,openai/gpt-4o,google/gemini-2.5-pro" \
+  --challenge ./examples/amm-challenge
+```
+
+### CLI Options
+
+```
+--tempo                Pay via Tempo MPP
+--openrouter-key KEY   Pay via OpenRouter API key
+--models MODELS        Comma-separated model list (required)
+--challenge PATH       Path to challenge folder (default: current dir)
+--rounds N             Number of deliberation rounds (default: 3)
+```
+
+### Example Commands
+
+```bash
+# Quick test with 2 cheap models
+uv run council run --tempo \
+  --models "openai/gpt-4o-mini,google/gemini-2.0-flash-001" \
   --challenge ./examples/amm-challenge
 
-# Or with an OpenRouter API key
-uv run council run --openrouter-key sk-or-... \
+# Full council with 4 frontier models
+uv run council run --tempo \
+  --models "anthropic/claude-sonnet-4-6,openai/gpt-4o,google/gemini-2.5-pro,deepseek/deepseek-v3.2" \
+  --challenge ./examples/amm-challenge
+
+# Fewer deliberation rounds (faster, less thorough)
+uv run council run --tempo --rounds 2 \
   --models "anthropic/claude-sonnet-4-6,openai/gpt-4o" \
+  --challenge ./examples/amm-challenge
+
+# Verbose logging (see everything on screen)
+COUNCIL_LOG_LEVEL=DEBUG uv run council run --tempo \
+  --models "openai/gpt-4o-mini" \
   --challenge ./examples/amm-challenge
 ```
 
