@@ -4,9 +4,10 @@
 
 Give it any optimization problem — a website URL and a simulator repo — and it sets up the challenge, then runs an infinite loop where multiple AI models (Claude, GPT, Grok, Gemini, DeepSeek) brainstorm ideas, critique each other anonymously, vote on what to try, implement the winner, test it, and repeat. You go to sleep, wake up to results.
 
-Two tools:
+Three tools:
 1. **`create_challenge.py`** — describe a problem in plain text, it builds the challenge folder
 2. **`council run`** — runs the multi-model research loop on any challenge
+3. **`deep_research.py`** — generate prompts for external deep research tools, import findings mid-run
 
 Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), but instead of one model iterating alone, a council of models from different providers collaborates to find solutions faster.
 
@@ -33,6 +34,7 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), b
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │ CONTEXT — load all exp/* branches, best score, target file │  │
+│  │           + deep research findings if available            │  │
 │  └────────────────────────┬───────────────────────────────────┘  │
 │                           ▼                                      │
 │  ┌────────────────────────────────────────────────────────────┐  │
@@ -96,6 +98,19 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), b
 │  └──▶ Back to CONTEXT (now with one more experiment branch)      │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────────────────────┐
+                    │  DEEP RESEARCH (anytime)     │
+                    │                              │
+                    │  Terminal 2, while council    │
+                    │  runs in Terminal 1:          │
+                    │                              │
+                    │  1. Generate research prompt  │
+                    │  2. Paste into ChatGPT/       │
+                    │     Perplexity/etc.           │
+                    │  3. Import findings back      │
+                    │  4. Next round picks them up  │
+                    └─────────────────────────────┘
 ```
 
 ## Quick Start
@@ -112,7 +127,7 @@ uv sync
 Describe any optimization problem in plain text. Include URLs to the problem page and simulator repo.
 
 ```bash
-python create_challenge.py --output ./my-challenge
+uv run python create_challenge.py --output ./my-challenge
 ```
 
 Then type your description:
@@ -158,6 +173,30 @@ uv run council run \
 
 It runs forever. Ctrl+C to stop. Restart anytime — it reads all past experiments from git and picks up where it left off.
 
+### Step 3: Deep Research (optional, anytime)
+
+When the council gets stuck, use external deep research tools to break through.
+
+**In a second terminal** (while the council is still running):
+
+```bash
+# Generate a research prompt with full context
+uv run python deep_research.py --challenge ./my-challenge
+```
+
+This prints a detailed prompt containing: the problem, every experiment tried, the best code, the score gap, and specific research questions. Copy it and paste into ChatGPT Deep Research, Perplexity, or any research tool.
+
+When you get results back:
+
+```bash
+# Import the findings
+uv run python deep_research.py --challenge ./my-challenge --import
+```
+
+Paste the research findings, press Ctrl+D. They're saved to `research_findings.md` in the challenge folder. The council picks them up automatically on the next round — no restart needed.
+
+You can do this multiple times. Each import appends to the file, so findings accumulate.
+
 ## How the Council Works
 
 ```
@@ -190,8 +229,18 @@ Each experiment is recorded as a git branch with a detailed commit message: the 
 
 ### `create_challenge.py`
 
+```bash
+uv run python create_challenge.py --output PATH
 ```
---output PATH          Where to create the challenge folder (required)
+
+### `deep_research.py`
+
+```bash
+# Generate research prompt
+uv run python deep_research.py --challenge PATH
+
+# Import findings
+uv run python deep_research.py --challenge PATH --import
 ```
 
 ### Example Commands
@@ -261,6 +310,7 @@ See [GUIDE.md](GUIDE.md) for the full format or `examples/amm-challenge/` for a 
 - **Anonymous deliberation**: Models don't know who proposed what during critique and voting
 - **Payment flexibility**: `--tempo` (Tempo MPP) or `--openrouter-key` (standard API key)
 - **Git as state**: Stop and restart anytime — reads all `exp/*` branches on startup
+- **Deep research**: Import external findings mid-run, models see them next round
 - **Full audit trail**: `council.log` at DEBUG level, `COUNCIL_LOG_LEVEL=DEBUG` for screen
 
 ## Built With
