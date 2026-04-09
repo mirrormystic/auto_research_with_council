@@ -86,7 +86,15 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), b
 │  │          commit: score, proposer, votes, critiques, diff   │  │
 │  └────────────────────────┬───────────────────────────────────┘  │
 │                           │                                      │
-│                           └──────────── loop ◄───────────────┘  │
+│                           ▼                                      │
+│                    ┌─────────────┐                               │
+│                    │  NEXT ROUND │ ──────────────────────────┐   │
+│                    └─────────────┘                            │   │
+│                                                              │   │
+│  ┌───────────────────────────────────────────────────────────┘   │
+│  │                                                               │
+│  └──▶ Back to CONTEXT (now with one more experiment branch)      │
+│                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
