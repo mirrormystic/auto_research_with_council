@@ -109,43 +109,34 @@ def context_info(
     return "\n".join(lines)
 
 
-def prompt_preview(phase_name: str, prompt: str, max_lines: int = 15) -> str:
-    """Show a preview of the prompt being sent to models."""
+def prompt_preview(phase_name: str, prompt: str) -> str:
+    """Show the full prompt being sent to models, with colored sections."""
     lines = prompt.split("\n")
-    # Show the EXPERIMENT HISTORY section and YOUR TASK section
-    preview_lines = []
-    in_section = False
-    section_count = 0
-    for line in lines:
-        if line.startswith("# EXPERIMENT HISTORY"):
-            in_section = True
-            preview_lines.append(f"  {BOLD}{YELLOW}─── Experiment History ───{RESET}")
-            continue
-        if line.startswith("# YOUR TASK") or line.startswith("# PROPOSALS") or line.startswith("# ALL PROPOSALS"):
-            in_section = True
-            preview_lines.append(f"  {BOLD}{YELLOW}─── {line.lstrip('# ')} ───{RESET}")
-            continue
-        if line.startswith("# ") and in_section:
-            in_section = False
-        if in_section:
-            stripped = line.strip()
-            if stripped:
-                if stripped.startswith("=== exp/"):
-                    # Branch header
-                    preview_lines.append(f"  {CYAN}{stripped}{RESET}")
-                elif stripped.startswith("=="):
-                    preview_lines.append(f"  {DIM}{stripped[:100]}{RESET}")
-                elif stripped.startswith("## Proposal"):
-                    preview_lines.append(f"  {BLUE}{stripped}{RESET}")
-                else:
-                    preview_lines.append(f"  {DIM}{stripped[:100]}{RESET}")
-                section_count += 1
-                if section_count > max_lines:
-                    preview_lines.append(f"  {DIM}... ({len(lines) - section_count} more lines){RESET}")
-                    break
+    colored_lines = []
 
-    if not preview_lines:
-        preview_lines.append(f"  {DIM}(prompt: {len(prompt):,} chars){RESET}")
+    for line in lines:
+        stripped = line.strip()
+        if line.startswith("# "):
+            # Section headers
+            colored_lines.append(f"  {BOLD}{YELLOW}─── {stripped.lstrip('# ')} ───{RESET}")
+        elif stripped.startswith("=== exp/"):
+            colored_lines.append(f"  {CYAN}{stripped}{RESET}")
+        elif stripped.startswith("=="):
+            colored_lines.append(f"  {WHITE}{stripped}{RESET}")
+        elif stripped.startswith("## Proposal"):
+            colored_lines.append(f"  {BLUE}{stripped}{RESET}")
+        elif stripped.startswith("```"):
+            colored_lines.append(f"  {DIM}{stripped}{RESET}")
+        elif stripped.startswith("---"):
+            colored_lines.append(f"  {DIM}{stripped}{RESET}")
+        elif stripped.startswith("diff --git"):
+            colored_lines.append(f"  {MAGENTA}{stripped}{RESET}")
+        elif stripped.startswith("+") and not stripped.startswith("+++"):
+            colored_lines.append(f"  {GREEN}{stripped}{RESET}")
+        elif stripped.startswith("-") and not stripped.startswith("---"):
+            colored_lines.append(f"  {RED}{stripped}{RESET}")
+        elif stripped:
+            colored_lines.append(f"  {DIM}{stripped}{RESET}")
 
     header = f"{ts()} {BOLD}{MAGENTA}PROMPT → {phase_name}{RESET}  {DIM}({len(prompt):,} chars){RESET}"
-    return header + "\n" + "\n".join(preview_lines)
+    return header + "\n" + "\n".join(colored_lines)
