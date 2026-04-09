@@ -74,9 +74,13 @@ async def run_deliberation(
         log.error("No proposals received from any model")
         raise RuntimeError("No proposals received from any model")
     log.info("Total proposals collected: %d", len(proposals))
+    for p in proposals:
+        log.info("Proposal #%d [%s]: \"%s\" — %s (impact: %s)",
+                 p.id, p.source_model.split("/")[-1], p.title, p.description[:200], p.expected_impact)
 
     # Format proposals for critique/vote rounds (anonymous)
     proposals_text = format_proposals(proposals, anonymous=True)
+    log.info("Formatted proposals for deliberation:\n%s", proposals_text)
 
     all_critiques: list[dict] = []
 
@@ -113,11 +117,19 @@ async def run_deliberation(
                             source_model=model,
                         ))
                         proposal_id += 1
+                    num_critiques = len(data.get("critiques", []))
+                    num_new = len(data.get("new_ideas", []))
+                    log.info("Model %s: %d critiques, %d new ideas in %.1fs", short, num_critiques, num_new, elapsed)
+                    for c in data.get("critiques", []):
+                        log.info("  Critique on #%s: strengths=%s weaknesses=%s",
+                                 c.get("proposal_id"), c.get("strengths", "")[:150], c.get("weaknesses", "")[:150])
                     critiques_parts.append(f"Reviewer:\n{text}")
                     print(f"  ✓ {short:20s} ({elapsed:.1f}s)")
                 else:
+                    log.warning("Model %s failed to return parseable critiques", short)
                     print(f"  ✗ {short:20s} failed to parse ({elapsed:.1f}s)")
 
+            log.info("Total critiques: %d, new ideas added: %d", len(all_critiques), len(proposals) - proposal_id + len(all_critiques))
             critiques_text = "\n\n".join(critiques_parts)
             # Update proposals text with new ideas
             proposals_text = format_proposals(proposals, anonymous=True)
@@ -143,8 +155,10 @@ async def run_deliberation(
                             if p.id == pid:
                                 p.score += score
                     vote_breakdown[model] = model_votes
+                    log.info("Model %s votes: %s", short, model_votes)
                     print(f"  ✓ {short:20s} ({elapsed:.1f}s)")
                 else:
+                    log.warning("Model %s failed to return parseable votes", short)
                     print(f"  ✗ {short:20s} failed to parse ({elapsed:.1f}s)")
 
     # Sort by score, break ties randomly

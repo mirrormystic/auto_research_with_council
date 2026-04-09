@@ -98,7 +98,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         # 1. Build context
         log.info("Building context from challenge dir")
         context = build_context(challenge_dir, challenge)
-        log.debug("Context length: %d chars", len(context))
+        log.info("Context built: %d chars", len(context))
 
         # 2-4. Deliberation
         try:
@@ -160,11 +160,13 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
             capture_output=True,
             text=True,
         )
+        log.info("Implementation diff:\n%s", diff_result.stdout[:3000])
         diff = diff_result.stdout[:2000]
 
         branch_name = make_branch_name(score, result.winner.title)
         create_experiment_branch(challenge_dir, branch_name)
         msg = build_commit_message(result, score, challenge, diff)
+        log.info("Commit message:\n%s", msg)
         commit_experiment(challenge_dir, [challenge.target_file], msg)
 
         # Print record

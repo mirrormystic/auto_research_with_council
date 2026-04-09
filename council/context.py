@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from council.logger import log
 from council.config import ChallengeConfig
 from council.git import get_experiment_history, get_current_best, get_file_from_branch
 
@@ -40,7 +41,11 @@ def build_context(challenge_dir: Path, config: ChallengeConfig) -> str:
     history = get_experiment_history(challenge_dir)
     parts.append(f"\n# EXPERIMENT HISTORY\n{history}")
 
-    return "\n".join(parts)
+    result = "\n".join(parts)
+    log.info("Context built: %d chars, best_score=%s best_branch=%s, %d reference files",
+             len(result), best_score, best_branch, len(config.reference_files))
+    log.info("Experiment history:\n%s", history)
+    return result
 
 
 def build_propose_prompt(context: str, proposals_per_model: int) -> str:
