@@ -1,6 +1,7 @@
 """Spawn Claude Code CLI to implement the winning proposal."""
 
 import subprocess
+import sys
 from pathlib import Path
 
 from council.config import ChallengeConfig
@@ -22,24 +23,21 @@ def implement_proposal(
         prompt += f"Then validate by running: {config.validate}"
 
     log.info("Spawning Claude Code CLI to implement proposal")
-    log.debug("Implementation prompt:\n%s", prompt)
+    log.info("Implementation prompt:\n%s", prompt)
 
+    # Stream output live to terminal (no capture) so user sees Claude working
     result = subprocess.run(
         ["claude", "-p", prompt, "--allowedTools", "Edit,Write,Read,Bash"],
         cwd=challenge_dir,
-        capture_output=True,
-        text=True,
         timeout=120,
     )
 
-    log.debug("Claude Code stdout:\n%s", result.stdout[:2000])
-    if result.stderr:
-        log.debug("Claude Code stderr:\n%s", result.stderr[:2000])
-
     if result.returncode != 0:
-        log.error("Claude Code failed (rc=%d): %s", result.returncode, result.stderr[:500])
-        print(f"  ✗ Claude Code failed: {result.stderr[:200]}")
+        log.error("Claude Code failed (rc=%d)", result.returncode)
+        print(f"  ✗ Claude Code failed (exit code {result.returncode})")
         return False
+
+    log.info("Claude Code finished successfully")
 
     # If there's a validate command, run it to double-check
     if config.validate:
@@ -52,7 +50,7 @@ def implement_proposal(
             text=True,
             timeout=60,
         )
-        log.debug("Validation stdout: %s", val_result.stdout[:500])
+        log.info("Validation output: %s", val_result.stdout.strip())
         if val_result.returncode != 0:
             log.error("Validation failed: %s", val_result.stdout[:500])
             print(f"  ✗ Validation failed: {val_result.stdout[:200]}")
