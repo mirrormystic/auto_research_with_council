@@ -4,6 +4,7 @@ import asyncio
 import random
 from dataclasses import dataclass, field
 
+from council.logger import log
 from council.openrouter import call_all_models, extract_json
 from council.context import build_propose_prompt, build_critique_prompt, build_vote_prompt
 
@@ -39,8 +40,10 @@ async def run_deliberation(
     """Run the full deliberation pipeline."""
 
     # --- ROUND 1: PROPOSE ---
+    log.info("ROUND 1: PROPOSE — %d models x %d ideas", len(models), proposals_per_model)
     print(f"\nPROPOSE  {len(models)} models x {proposals_per_model} ideas")
     propose_prompt = build_propose_prompt(context, proposals_per_model)
+    log.debug("Propose prompt length: %d chars", len(propose_prompt))
     responses = await call_all_models(models, propose_prompt, thinking=thinking)
 
     proposals: list[Proposal] = []
@@ -61,12 +64,16 @@ async def run_deliberation(
                 ))
                 proposal_id += 1
                 count += 1
+            log.info("Model %s proposed %d ideas in %.1fs", short, count, elapsed)
             print(f"  ✓ {short:20s} {count} ideas ({elapsed:.1f}s)")
         else:
+            log.warning("Model %s failed to return parseable proposals in %.1fs", short, elapsed)
             print(f"  ✗ {short:20s} failed to parse ({elapsed:.1f}s)")
 
     if not proposals:
+        log.error("No proposals received from any model")
         raise RuntimeError("No proposals received from any model")
+    log.info("Total proposals collected: %d", len(proposals))
 
     # Format proposals for critique/vote rounds (anonymous)
     proposals_text = format_proposals(proposals, anonymous=True)
@@ -77,6 +84,7 @@ async def run_deliberation(
     for round_num in range(2, rounds + 1):
         if round_num < rounds:
             # Critique round
+            log.info("ROUND %d: CRITIQUE — %d models reviewing %d proposals", round_num, len(models), len(proposals))
             print(f"\nCRITIQUE  {len(models)} models reviewing {len(proposals)} proposals")
             critique_prompt = build_critique_prompt(context, proposals_text)
             responses = await call_all_models(models, critique_prompt, thinking=thinking)
@@ -115,6 +123,7 @@ async def run_deliberation(
             proposals_text = format_proposals(proposals, anonymous=True)
         else:
             # Final round: VOTE
+            log.info("ROUND %d: VOTE — %d models scoring %d proposals", round_num, len(models), len(proposals))
             print(f"\nVOTE  {len(models)} models scoring {len(proposals)} proposals")
             critiques_text = format_critiques(all_critiques)
             vote_prompt = build_vote_prompt(context, proposals_text, critiques_text)
@@ -143,8 +152,10 @@ async def run_deliberation(
     proposals.sort(key=lambda p: p.score, reverse=True)
 
     # Print top 3
+    log.info("Voting complete. Top proposals:")
     print()
     for i, p in enumerate(proposals[:3]):
+        log.info("  #%d \"%s\" score=%d (by %s)", i+1, p.title, p.score, p.source_model)
         print(f"  #{i+1}  \"{p.title}\"  Score: {p.score}")
 
     return DeliberationResult(

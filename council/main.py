@@ -5,6 +5,7 @@ import asyncio
 import sys
 from pathlib import Path
 
+from council.logger import log
 from council.config import parse_program_md, load_council_config, ChallengeConfig, CouncilConfig
 from council.context import build_context
 from council.deliberate import run_deliberation, DeliberationResult, format_critiques
@@ -89,12 +90,15 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         best_score, best_branch = get_current_best(challenge_dir, challenge.direction)
         best_display = f"{best_score:.2f}" if best_score else "none"
 
+        log.info("=== COUNCIL ROUND %d === Best: %s", round_num, best_display)
         print(f"\n{'=' * 55}")
         print(f"  COUNCIL ROUND {round_num}  |  Best: {best_display}")
         print(f"{'=' * 55}")
 
         # 1. Build context
+        log.info("Building context from challenge dir")
         context = build_context(challenge_dir, challenge)
+        log.debug("Context length: %d chars", len(context))
 
         # 2-4. Deliberation
         try:
@@ -106,6 +110,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
                 thinking=council.thinking,
             )
         except RuntimeError as e:
+            log.error("Deliberation failed: %s", e)
             print(f"\n  ✗ Deliberation failed: {e}")
             print("  Retrying in next round...")
             continue
@@ -113,6 +118,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         # 5. Implement (try top 3)
         implemented = False
         for proposal in result.proposals[:3]:
+            log.info("Attempting implementation: \"%s\" (by %s, score=%d)", proposal.title, proposal.source_model, proposal.score)
             print(f"\nIMPLEMENT  Claude Code working on: \"{proposal.title}\"")
             ok = implement_proposal(challenge_dir, challenge, proposal.description)
             if ok:
@@ -123,6 +129,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
             print(f"  Trying next proposal...")
 
         if not implemented:
+            log.warning("All top 3 proposals failed to implement, skipping round")
             print("  ✗ All top proposals failed to implement. Skipping round.")
             checkout_main(challenge_dir)
             continue
@@ -142,6 +149,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
 
         marker = " <- NEW BEST" if is_improvement else ""
         if score is not None:
+            log.info("Score: %.2f (best: %s) %s", score, best_display, "NEW BEST" if is_improvement else "")
             print(f"  Score: {score:.2f}{marker}")
 
         # Get diff for commit message
@@ -161,10 +169,12 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
 
         # Print record
         proposer = result.winner.source_model.split("/")[-1]
+        log.info("Recorded experiment: exp/%s (proposed by %s)", branch_name, proposer)
         print(f"\nRECORD -> exp/{branch_name}")
         print(f"  Proposed by: {proposer}")
 
         checkout_main(challenge_dir)
+        log.info("Returned to main branch, starting next round")
 
 
 def cli() -> None:
@@ -195,12 +205,15 @@ def cli() -> None:
         overrides["rounds"] = args.rounds
     council = load_council_config(challenge_dir, overrides)
 
+    log.info("Council starting. challenge=%s target=%s models=%s rounds=%d direction=%s",
+             challenge_dir, challenge.target_file, council.models, council.rounds, challenge.direction)
     print(f"Council — Multi-Model Autonomous Research")
     print(f"Challenge: {challenge_dir}")
     print(f"Target: {challenge.target_file}")
     print(f"Models: {', '.join(m.split('/')[-1] for m in council.models)}")
     print(f"Rounds: {council.rounds}")
     print(f"Direction: {challenge.direction}")
+    print(f"Log file: council.log")
 
     asyncio.run(run_loop(challenge_dir, challenge, council))
 

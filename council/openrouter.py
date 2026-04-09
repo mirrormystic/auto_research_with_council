@@ -7,6 +7,8 @@ import time
 
 import httpx
 
+from council.logger import log
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
@@ -47,6 +49,7 @@ async def call_model(
             body["transforms"] = ["middle-out"]
         # Other providers handle thinking via model selection
 
+    log.debug("Calling model=%s prompt_len=%d", model, len(prompt))
     start = time.monotonic()
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(OPENROUTER_URL, headers=headers, json=body)
@@ -55,6 +58,8 @@ async def call_model(
 
     elapsed = time.monotonic() - start
     text = data["choices"][0]["message"]["content"]
+    log.info("Model %s responded in %.1fs, response_len=%d", model, elapsed, len(text))
+    log.debug("Model %s full response:\n%s", model, text)
     return model, text, elapsed
 
 
@@ -71,9 +76,11 @@ async def call_all_models(
     good = []
     for r in results:
         if isinstance(r, Exception):
+            log.error("Model call failed: %s", r)
             print(f"  ✗ Model failed: {r}")
         else:
             good.append(r)
+    log.info("call_all_models: %d/%d succeeded", len(good), len(models))
     return good
 
 
@@ -81,7 +88,9 @@ def extract_json(text: str) -> dict | None:
     """Extract JSON from a model response that might have markdown fences."""
     # Try direct parse first
     try:
-        return json.loads(text)
+        result = json.loads(text)
+        log.debug("extract_json: direct parse succeeded")
+        return result
     except json.JSONDecodeError:
         pass
 
@@ -115,4 +124,5 @@ def extract_json(text: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
+    log.warning("extract_json: failed to parse JSON from response (len=%d): %s...", len(text), text[:200])
     return None
