@@ -82,34 +82,66 @@ def _parse_tool_call(data: dict, response_model: type[T]) -> T | None:
     message = choices[0].get("message", {})
 
     # Try tool_calls first (standard function calling response)
+    # Collect all candidate JSON strings to try
+    candidates: list[str] = []
+
+    # 1. Tool call arguments (primary)
     tool_calls = message.get("tool_calls", [])
     if tool_calls:
         args_str = tool_calls[0].get("function", {}).get("arguments", "")
-        try:
-            return response_model.model_validate_json(args_str)
-        except (ValidationError, json.JSONDecodeError) as e:
-            log.warning("Tool call parse failed: %s", e)
+        if args_str:
+            candidates.append(args_str)
 
-    # Fallback: some models put it in content even with tool_choice
+    # 2. Message content (fallback — some models ignore tool_choice)
     content = message.get("content", "")
     if content:
-        # Try direct parse
-        try:
-            return response_model.model_validate_json(content)
-        except (ValidationError, json.JSONDecodeError):
-            pass
-        # Try extracting JSON from content
+        candidates.append(content)
+        # Also try extracting outermost { }
         first = content.find("{")
         last = content.rfind("}")
         if first != -1 and last > first:
-            try:
-                return response_model.model_validate_json(content[first:last + 1])
-            except (ValidationError, json.JSONDecodeError):
-                pass
+            candidates.append(content[first:last + 1])
+
+    # Try each candidate with multiple parsing strategies
+    for candidate in candidates:
+        # Strategy A: parse as JSON dict, then validate (handles double-serialized fields)
+        try:
+            raw = json.loads(candidate)
+            if isinstance(raw, dict):
+                # Recursively parse any string values that are themselves JSON
+                raw = _deep_parse_json_strings(raw)
+                return response_model.model_validate(raw)
+        except (ValidationError, json.JSONDecodeError, TypeError):
+            pass
+
+        # Strategy B: direct JSON string validation
+        try:
+            return response_model.model_validate_json(candidate)
+        except (ValidationError, json.JSONDecodeError):
+            pass
 
     log.warning("Could not parse response into %s", response_model.__name__)
     log.debug("Raw response: %s", json.dumps(data, indent=2)[:2000])
     return None
+
+
+def _deep_parse_json_strings(obj: dict) -> dict:
+    """Recursively parse string values that look like JSON objects/arrays."""
+    result = {}
+    for key, value in obj.items():
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, (dict, list)):
+                    value = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif isinstance(value, list):
+            value = [_deep_parse_json_strings(v) if isinstance(v, dict) else v for v in value]
+        elif isinstance(value, dict):
+            value = _deep_parse_json_strings(value)
+        result[key] = value
+    return result
 
 
 async def call_model_typed(
