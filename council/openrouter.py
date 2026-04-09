@@ -1,4 +1,4 @@
-"""OpenRouter API client."""
+"""OpenRouter API client with optional MPP/Tempo payment support."""
 
 import asyncio
 import json
@@ -10,13 +10,44 @@ import httpx
 from council.logger import log
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+# MPP-enabled OpenRouter endpoint (set via OPENROUTER_MPP_URL env or council.yaml)
+OPENROUTER_MPP_URL = os.environ.get("OPENROUTER_MPP_URL", "https://openrouter.mpp.tempo.xyz/api/v1/chat/completions")
+
+
+def _use_tempo() -> bool:
+    """Check if Tempo/MPP payment is configured."""
+    return bool(os.environ.get("TEMPO_PRIVATE_KEY"))
 
 
 def get_api_key() -> str:
     key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not key:
-        raise RuntimeError("OPENROUTER_API_KEY environment variable not set")
+    if not key and not _use_tempo():
+        raise RuntimeError(
+            "Set OPENROUTER_API_KEY for direct access, or "
+            "TEMPO_PRIVATE_KEY for MPP/Tempo payment"
+        )
     return key
+
+
+async def _make_tempo_client(timeout: float) -> httpx.AsyncClient:
+    """Create an httpx client with MPP/Tempo payment transport."""
+    try:
+        from mpp.client import Client as MppClient
+        from mpp.methods.tempo import tempo, TempoAccount, ChargeIntent
+    except ImportError:
+        raise RuntimeError(
+            "pympp[tempo] is required for Tempo payments. "
+            "Install with: pip install 'pympp[tempo]'"
+        )
+
+    key = os.environ["TEMPO_PRIVATE_KEY"]
+    account = TempoAccount.from_key(key)
+    log.info("Using Tempo/MPP payment (account: %s)", account)
+
+    # Return the MppClient which wraps httpx with 402 payment handling
+    client = MppClient(methods=[tempo(account=account, intents={"charge": ChargeIntent()})])
+    await client.__aenter__()
+    return client
 
 
 async def call_model(
@@ -27,14 +58,7 @@ async def call_model(
     timeout: float = 120.0,
 ) -> tuple[str, str, float]:
     """Call a model via OpenRouter. Returns (model_id, response_text, elapsed_seconds)."""
-    api_key = get_api_key()
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/council",
-        "X-Title": "Council - Multi-Model Research",
-    }
+    use_tempo = _use_tempo()
 
     body: dict = {
         "model": model,
@@ -43,18 +67,40 @@ async def call_model(
         "max_tokens": 4096,
     }
 
-    # Request extended thinking for models that support it
     if thinking == "extended":
         if "anthropic" in model:
             body["transforms"] = ["middle-out"]
-        # Other providers handle thinking via model selection
 
-    log.debug("Calling model=%s prompt_len=%d", model, len(prompt))
+    log.debug("Calling model=%s prompt_len=%d via=%s", model, len(prompt), "tempo" if use_tempo else "api-key")
     start = time.monotonic()
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(OPENROUTER_URL, headers=headers, json=body)
-        resp.raise_for_status()
-        data = resp.json()
+
+    if use_tempo:
+        url = os.environ.get("OPENROUTER_MPP_URL", OPENROUTER_MPP_URL)
+        headers = {
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/council",
+            "X-Title": "Council - Multi-Model Research",
+        }
+        # MPP client handles 402 payment automatically — no API key needed
+        client = await _make_tempo_client(timeout)
+        try:
+            resp = await client.post(url, headers=headers, json=body)
+            resp.raise_for_status()
+            data = resp.json()
+        finally:
+            await client.__aexit__(None, None, None)
+    else:
+        api_key = get_api_key()
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/council",
+            "X-Title": "Council - Multi-Model Research",
+        }
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(OPENROUTER_URL, headers=headers, json=body)
+            resp.raise_for_status()
+            data = resp.json()
 
     elapsed = time.monotonic() - start
     text = data["choices"][0]["message"]["content"]

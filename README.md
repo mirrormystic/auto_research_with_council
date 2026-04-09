@@ -46,3 +46,23 @@ Override defaults with `council.yaml` in the challenge folder or CLI flags:
 ```bash
 council run --models "claude-opus-4-6,gpt-5.4" --rounds 2
 ```
+
+## Tempo/MPP Payments (optional)
+
+Instead of an OpenRouter API key, you can pay for model calls via Tempo's Machine Payments Protocol:
+
+```bash
+# Install with Tempo support
+uv sync --extra tempo
+
+# Set your Tempo private key (no OpenRouter API key needed)
+export TEMPO_PRIVATE_KEY=0x...
+
+# Optionally override the MPP endpoint
+export OPENROUTER_MPP_URL=https://openrouter.mpp.tempo.xyz/api/v1/chat/completions
+
+# Run as normal — payments happen automatically via HTTP 402
+uv run council run --challenge ./examples/amm-challenge
+```
+
+If both `OPENROUTER_API_KEY` and `TEMPO_PRIVATE_KEY` are set, Tempo takes priority.
