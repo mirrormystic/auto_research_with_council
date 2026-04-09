@@ -1,52 +1,48 @@
 #!/usr/bin/env python3
-"""Create a challenge folder from a problem website + simulator GitHub repo.
+"""Create a challenge folder from a natural language description.
 
-Spawns Claude Code to read the website, clone the repo, understand the
-simulator, and generate a properly structured challenge folder with
-program.md, target file, and reference files.
+Spawns Claude Code to read any URLs mentioned, clone repos, understand
+the simulator, and generate a properly structured challenge folder.
 
 Usage:
-    python create_challenge.py \
-        --url "https://www.optimizationarena.com/amm" \
-        --repo "https://github.com/benedictbrady/amm-challenge" \
-        --output ./challenges/amm
+    python create_challenge.py --output ./challenges/amm
 
-    python create_challenge.py \
-        --url "https://some-competition.com/problem" \
-        --repo "https://github.com/org/simulator" \
-        --output ./challenges/my-problem
+    Then type your description, e.g.:
+    "The problem is at https://www.optimizationarena.com/amm and the
+     simulator is at https://github.com/benedictbrady/amm-challenge"
 """
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
 
 
-PROMPT_TEMPLATE = """You are setting up a challenge folder for an autonomous research tool called "council".
+SYSTEM_PROMPT = """You are setting up a challenge folder for an autonomous research tool called "council".
 
 Council runs a loop where multiple AI models brainstorm, critique, vote on, and test optimization ideas.
 Each challenge is a git folder with a `program.md` and the files needed to run it.
 
+The user will describe the problem in plain text. They may give you URLs to websites and GitHub repos.
+
 YOUR TASK:
 
-1. Go to this website and read the full problem description:
-   {url}
+1. Read any URLs the user mentioned — websites, GitHub repos, docs, etc.
+   Use WebFetch and Bash (git clone) to get the full picture.
 
-2. Clone this GitHub repo and understand the simulator:
-   {repo}
+2. Figure out:
+   - What the optimization problem is
+   - How to install and run the simulator/evaluator
+   - The evaluation command (how to score a solution)
+   - The metric (what number to extract from the output, and the regex for it)
+   - The target file (what file gets modified to try different strategies)
+   - Reference files (read-only files the target file depends on)
+   - Whether higher or lower score is better
 
-   - Figure out how to install and run it
-   - Identify the evaluation command (how to score a solution)
-   - Identify the metric (what number to extract from the output)
-   - Identify the target file (what file gets modified to try different strategies)
-   - Identify reference files (read-only files the target file depends on)
+3. Create the challenge folder with:
 
-3. Create a challenge folder at: {output}
-
-   The folder must contain:
-
-   a. `program.md` — with YAML frontmatter + full problem description:
+   a. `program.md` — YAML frontmatter + full problem description:
       ```
       ---
       target_file: <the file to optimize>
@@ -62,7 +58,7 @@ YOUR TASK:
       # Problem Title
 
       ## The Problem
-      <full problem description from the website>
+      <full problem description>
 
       ## Scoring
       <how scoring works, what the metric means>
@@ -74,40 +70,95 @@ YOUR TASK:
       <all constraints, limits, rules>
 
       ## Available Helpers
-      <any utilities, base classes, helper functions available>
+      <any utilities, base classes, helper functions>
 
       ## Benchmarks
       <baseline scores, leaderboard scores if known>
       ```
 
-   b. The target file (copy from the repo — the starting/baseline version)
+   b. The target file (copy the starting/baseline version)
+   c. All reference files (read-only dependencies)
+   d. A `setup.sh` script that installs the simulator so the eval command works
 
-   c. All reference files (copy from the repo — read-only dependencies)
-
-   d. A `setup.sh` script that installs the simulator and its dependencies
-      so that the eval command works when run from the challenge folder.
-      Use `uv` for Python package management.
-
-4. Initialize the folder as a git repo with an initial commit.
-
+4. Initialize as a git repo with an initial commit.
 5. Test that the eval command actually works by running it.
 
 IMPORTANT:
-- Read the website thoroughly — don't guess the problem description
-- Read the repo's README, source code, and tests to understand the simulator
-- Make the program.md detailed enough that an AI model reading ONLY that file
+- Read all URLs thoroughly — don't guess
+- Make program.md detailed enough that an AI model reading ONLY that file
   can understand the entire problem and propose solutions
 - The eval command must work from inside the challenge folder
-- Use relative paths in program.md
+- Use uv for Python package management
 """
+
+
+def stream_claude(prompt: str, cwd: str) -> int:
+    """Run Claude Code with streaming JSON output, print events live."""
+    proc = subprocess.Popen(
+        [
+            "claude", "-p", prompt,
+            "--allowedTools", "Edit,Write,Read,Bash,WebFetch",
+            "--output-format", "stream-json",
+        ],
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=None,  # let stderr go to terminal
+        text=True,
+    )
+
+    for line in proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            print(line)
+            continue
+
+        etype = event.get("type", "")
+
+        if etype == "assistant":
+            # Text output from Claude
+            msg = event.get("message", {})
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            print(f"\033[37m{block['text']}\033[0m")
+                        elif block.get("type") == "tool_use":
+                            tool = block.get("name", "")
+                            inp = block.get("input", {})
+                            if tool == "Bash":
+                                print(f"\033[36m$ {inp.get('command', '')}\033[0m")
+                            elif tool == "Write":
+                                print(f"\033[33m  Writing: {inp.get('file_path', '')}\033[0m")
+                            elif tool == "Edit":
+                                print(f"\033[33m  Editing: {inp.get('file_path', '')}\033[0m")
+                            elif tool == "Read":
+                                print(f"\033[34m  Reading: {inp.get('file_path', '')}\033[0m")
+                            elif tool == "WebFetch":
+                                print(f"\033[35m  Fetching: {inp.get('url', '')}\033[0m")
+                            else:
+                                print(f"\033[36m  [{tool}]\033[0m")
+            elif isinstance(content, str) and content:
+                print(f"\033[37m{content}\033[0m")
+
+        elif etype == "result":
+            # Final result
+            result_text = event.get("result", "")
+            if result_text:
+                print(f"\n\033[32m{result_text}\033[0m")
+
+    proc.wait()
+    return proc.returncode
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a council challenge folder from a website + GitHub repo"
+        description="Create a council challenge folder from a plain text description"
     )
-    parser.add_argument("--url", required=True, help="Problem description website URL")
-    parser.add_argument("--repo", required=True, help="Simulator GitHub repo URL")
     parser.add_argument("--output", required=True, help="Path for the new challenge folder")
     args = parser.parse_args()
 
@@ -119,51 +170,53 @@ def main():
 
     output.mkdir(parents=True, exist_ok=True)
 
-    prompt = PROMPT_TEMPLATE.format(
-        url=args.url,
-        repo=args.repo,
-        output=output,
-    )
+    print("Describe the challenge in plain text.")
+    print("Include any URLs (problem page, GitHub repo, docs).")
+    print("Press Ctrl+D (or Ctrl+Z on Windows) when done:\n")
 
-    print(f"Creating challenge folder at: {output}")
-    print(f"Problem URL: {args.url}")
-    print(f"Simulator repo: {args.repo}")
-    print(f"\n{'─' * 60}")
-    print(f"  Spawning Claude Code...")
-    print(f"{'─' * 60}\n")
-
-    result = subprocess.run(
-        [
-            "claude", "-p", prompt,
-            "--allowedTools", "Edit,Write,Read,Bash,WebFetch",
-        ],
-        cwd=str(output),
-        timeout=600,
-    )
-
-    print(f"\n{'─' * 60}")
-
-    if result.returncode != 0:
-        print(f"Claude Code exited with code {result.returncode}")
+    try:
+        user_input = sys.stdin.read().strip()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
         sys.exit(1)
 
-    # Verify the folder was created properly
+    if not user_input:
+        print("Error: no input provided")
+        sys.exit(1)
+
+    prompt = f"{SYSTEM_PROMPT}\n\nThe challenge folder should be created at: {output}\n\nUSER DESCRIPTION:\n{user_input}"
+
+    print(f"\n{'─' * 60}")
+    print(f"  Creating challenge at: {output}")
+    print(f"{'─' * 60}\n")
+
+    rc = stream_claude(prompt, str(output))
+
+    print(f"\n{'─' * 60}")
+
+    if rc != 0:
+        print(f"Claude Code exited with code {rc}")
+        sys.exit(1)
+
+    # Verify
     program_md = output / "program.md"
     if program_md.exists():
         print(f"\n✓ Challenge folder created at: {output}")
         print(f"✓ program.md exists ({program_md.stat().st_size} bytes)")
 
-        # Show the frontmatter
         content = program_md.read_text()
         if content.startswith("---"):
-            end = content.index("---", 3)
-            print(f"\nFrontmatter:\n{content[:end + 3]}")
+            try:
+                end = content.index("---", 3)
+                print(f"\nFrontmatter:\n{content[:end + 3]}")
+            except ValueError:
+                pass
     else:
         print(f"\n✗ program.md not found — challenge folder may be incomplete")
         sys.exit(1)
 
     print(f"\nTo run the council on this challenge:")
-    print(f"  uv run council run --openrouter-key <KEY> --models \"anthropic/claude-sonnet-4-6,openai/gpt-4o\" --challenge {output}")
+    print(f'  uv run council run --openrouter-key <KEY> --models "anthropic/claude-sonnet-4-6,openai/gpt-4o" --challenge {output}')
 
 
 if __name__ == "__main__":
