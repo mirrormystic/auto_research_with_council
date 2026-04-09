@@ -5,3 +5,5 @@ __pycache__/
 uv.lock
 run.log
 council.log
+research_prompt.md
+research_findings.md

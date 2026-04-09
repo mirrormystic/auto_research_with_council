@@ -42,6 +42,16 @@ def build_context(challenge_dir: Path, config: ChallengeConfig) -> str:
     history = get_experiment_history(challenge_dir)
     parts.append(f"\n# EXPERIMENT HISTORY\n{history}")
 
+    # 5. Deep research findings (if any)
+    findings_path = challenge_dir / "research_findings.md"
+    has_research = False
+    if findings_path.exists():
+        findings = findings_path.read_text().strip()
+        if findings:
+            parts.append(f"\n# DEEP RESEARCH FINDINGS\n\nThe following research was conducted externally and may contain relevant theoretical insights, paper references, and concrete strategy suggestions.\n\n{findings}")
+            has_research = True
+            log.info("Loaded research findings: %d chars", len(findings))
+
     # Count experiments
     num_experiments = history.count("=== exp/")
 
@@ -58,6 +68,7 @@ def build_context(challenge_dir: Path, config: ChallengeConfig) -> str:
         num_experiments=num_experiments,
         num_ref_files=len(config.reference_files),
         target_file=config.target_file,
+        has_research=has_research,
     ))
 
     return result

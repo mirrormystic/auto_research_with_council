@@ -94,6 +94,7 @@ def context_info(
     num_experiments: int,
     num_ref_files: int,
     target_file: str,
+    has_research: bool = False,
 ) -> str:
     lines = [
         f"\n{ts()} {BOLD}{CYAN}CONTEXT{RESET}  Loading challenge state",
@@ -105,6 +106,8 @@ def context_info(
         lines.append(f"           Best so far: {BOLD}{GREEN}{best_score:.2f}{RESET} ({best_branch})")
     else:
         lines.append(f"           Best so far: {DIM}none (baseline){RESET}")
+    if has_research:
+        lines.append(f"           Research findings: {BOLD}{MAGENTA}loaded{RESET}")
     lines.append(f"           Context size: {context_len:,} chars")
     return "\n".join(lines)
 
