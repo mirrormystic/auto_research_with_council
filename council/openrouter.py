@@ -153,6 +153,16 @@ def _deep_parse_json_strings(obj: dict) -> dict:
     return result
 
 
+# Models that don't support tool calling reliably — use JSON mode instead
+_JSON_MODE_MODELS = {"gemini"}
+
+
+def _needs_json_mode(model: str) -> bool:
+    """Check if model should use JSON mode instead of tool calling."""
+    model_lower = model.lower()
+    return any(m in model_lower for m in _JSON_MODE_MODELS)
+
+
 async def call_model_typed(
     model: str,
     prompt: str,
@@ -161,17 +171,35 @@ async def call_model_typed(
     *,
     timeout: float = 120.0,
 ) -> tuple[str, T | None, float]:
-    """Call a model with tool calling. Returns (model_id, parsed_response, elapsed)."""
+    """Call a model with tool calling (or JSON mode for incompatible models)."""
     use_tempo = _use_tempo()
 
-    body: dict = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "max_tokens": 4096,
-        "tools": [tool],
-        "tool_choice": {"type": "function", "function": {"name": tool["function"]["name"]}},
-    }
+    if _needs_json_mode(model):
+        # JSON mode: ask for JSON in the prompt, use response_format
+        schema_str = json.dumps(tool["function"]["parameters"], indent=2)
+        json_prompt = (
+            f"{prompt}\n\n"
+            f"You MUST respond with JSON matching this exact schema:\n"
+            f"```json\n{schema_str}\n```\n"
+            f"Respond with only the JSON object, no other text."
+        )
+        body: dict = {
+            "model": model,
+            "messages": [{"role": "user", "content": json_prompt}],
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "response_format": {"type": "json_object"},
+        }
+        log.info("Using JSON mode for %s (tool calling not supported)", model)
+    else:
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "tools": [tool],
+            "tool_choice": {"type": "function", "function": {"name": tool["function"]["name"]}},
+        }
 
     method = "tempo" if use_tempo else "api-key"
     log.debug("Calling model=%s tool=%s via=%s", model, tool["function"]["name"], method)
