@@ -2,6 +2,7 @@
 
 ## Priority
 
+- [ ] Deep research phase (`--research`) — before proposing, models analyze the problem deeply: pattern analysis across past experiments, theoretical frameworks, gap analysis of untried approaches, root cause analysis of why scores plateau, cross-domain insights. Research outputs accumulate across rounds and feed into proposals. Makes the council smarter over time instead of just generating more ideas.
 - [ ] o1-pro / o3-pro support (long-thinking flag with budget cap per call)
 - [ ] Model performance tracking — which model's ideas win most often, best avg score improvement
 - [ ] Auto-drop underperforming models from roster after N rounds with no wins
