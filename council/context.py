@@ -62,7 +62,7 @@ For each idea, explain:
 - Why you think it will improve the score
 - Expected impact (small/medium/large)
 
-Respond with valid JSON only:
+You MUST respond with JSON matching this schema:
 {{
   "ideas": [
     {{
@@ -93,7 +93,7 @@ Review every proposal above. For each one, provide:
 
 Do NOT propose new ideas in this round — just critique.
 
-Respond with valid JSON only:
+You MUST respond with JSON matching this schema:
 {{
   "critiques": [
     {{
@@ -132,7 +132,7 @@ Now propose {proposals_per_model} NEW or REVISED ideas. You can:
 
 Do NOT repeat existing proposals unchanged.
 
-Respond with valid JSON only:
+You MUST respond with JSON matching this schema:
 {{
   "ideas": [
     {{
@@ -165,7 +165,7 @@ each idea is to improve the score.
 Use the full range: 0 for clearly bad ideas, 30-50 for mediocre, 60-80
 for promising, 90-100 for ideas you're confident will help.
 
-Respond with valid JSON only:
+You MUST respond with JSON matching this schema:
 {{
   "votes": [
     {{
