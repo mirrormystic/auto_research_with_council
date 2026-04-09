@@ -2,10 +2,12 @@
 
 import subprocess
 import sys
+import logging
 from pathlib import Path
 
 from council.config import ChallengeConfig
 from council.logger import log
+from council import display
 
 
 def implement_proposal(
@@ -23,23 +25,39 @@ def implement_proposal(
         prompt += f"Then validate by running: {config.validate}"
 
     log.info("Spawning Claude Code CLI to implement proposal")
-    log.info("Implementation prompt:\n%s", prompt)
+    log.debug("Implementation prompt:\n%s", prompt)
 
-    # Stream output live to terminal (no capture) so user sees Claude working
+    # Mute stderr logger during Claude Code so its output isn't interleaved
+    stderr_handler = None
+    for h in log.handlers:
+        if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr:
+            stderr_handler = h
+            log.removeHandler(h)
+            break
+
+    print(f"\n{display.DIM}{'─' * 60}")
+    print(f"  Claude Code working...{display.RESET}\n")
+
     result = subprocess.run(
         ["claude", "-p", prompt, "--allowedTools", "Edit,Write,Read,Bash"],
         cwd=challenge_dir,
         timeout=120,
     )
 
+    print(f"\n{display.DIM}{'─' * 60}{display.RESET}")
+
+    # Restore stderr logger
+    if stderr_handler:
+        log.addHandler(stderr_handler)
+
     if result.returncode != 0:
         log.error("Claude Code failed (rc=%d)", result.returncode)
-        print(f"  ✗ Claude Code failed (exit code {result.returncode})")
+        print(display.model_fail("Claude Code", f"exit code {result.returncode}"))
         return False
 
     log.info("Claude Code finished successfully")
 
-    # If there's a validate command, run it to double-check
+    # Validate
     if config.validate:
         log.info("Running validation: %s", config.validate)
         val_result = subprocess.run(
@@ -53,9 +71,9 @@ def implement_proposal(
         log.info("Validation output: %s", val_result.stdout.strip())
         if val_result.returncode != 0:
             log.error("Validation failed: %s", val_result.stdout[:500])
-            print(f"  ✗ Validation failed: {val_result.stdout[:200]}")
+            print(display.model_fail("Validation", val_result.stdout[:200]))
             return False
 
     log.info("Implementation succeeded, validation passed")
-    print(f"  ✓ Compiled  ✓ Validated")
+    print(f"  {display.GREEN}✓ Compiled  ✓ Validated{display.RESET}")
     return True

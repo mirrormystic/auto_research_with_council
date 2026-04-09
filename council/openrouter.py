@@ -102,7 +102,7 @@ async def call_model(
     elapsed = time.monotonic() - start
     text = data["choices"][0]["message"]["content"]
     log.info("Model %s responded in %.1fs, response_len=%d via %s", model, elapsed, len(text), method)
-    log.info("Model %s response:\n%s", model, text)
+    log.debug("Model %s raw response:\n%s", model, text)
     return model, text, elapsed
 
 
