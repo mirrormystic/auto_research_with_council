@@ -37,16 +37,15 @@ def build_commit_message(
         vote_lines.append(f"{short}={s}")
     vote_str = ", ".join(vote_lines)
     total = winner.score
-    max_possible = len(result.vote_breakdown) * 5
+    max_possible = len(result.vote_breakdown) * 100
 
-    # Key critiques for this proposal
+    # Key critiques for this proposal (anonymous)
     critique_lines = []
     for c in winner.critiques[:3]:
-        reviewer = c.get("reviewer_model", "unknown").split("/")[-1]
         weakness = c.get("weaknesses", "")
         suggestion = c.get("suggestions", "")
         if weakness or suggestion:
-            critique_lines.append(f"- {reviewer}: {weakness} {suggestion}".strip())
+            critique_lines.append(f"- {weakness} {suggestion}".strip())
 
     msg_parts = [
         f"{winner.title} (score: {score_str})",

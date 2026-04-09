@@ -80,6 +80,8 @@ def build_critique_prompt(context: str, proposals_text: str) -> str:
 
 # PROPOSALS FROM THE COMMITTEE
 
+All proposals are anonymous — you do not know who proposed what.
+
 {proposals_text}
 
 # YOUR TASK
@@ -89,7 +91,7 @@ Review every proposal above. For each one, provide:
 - Weaknesses / risks
 - Suggested modifications
 
-You may also propose NEW ideas inspired by the discussion.
+Do NOT propose new ideas in this round — just critique.
 
 Respond with valid JSON only:
 {{
@@ -100,12 +102,43 @@ Respond with valid JSON only:
       "weaknesses": "...",
       "suggestions": "..."
     }}
-  ],
-  "new_ideas": [
+  ]
+}}"""
+
+
+def build_repropose_prompt(
+    context: str,
+    proposals_text: str,
+    critiques_text: str,
+    proposals_per_model: int,
+) -> str:
+    return f"""{context}
+
+# EXISTING PROPOSALS (anonymous)
+
+{proposals_text}
+
+# CRITIQUES FROM THE COMMITTEE (anonymous)
+
+{critiques_text}
+
+# YOUR TASK
+
+You have seen the initial proposals and the committee's critiques.
+Now propose {proposals_per_model} NEW or REVISED ideas. You can:
+- Propose entirely new ideas inspired by the discussion
+- Improve on existing proposals based on the critiques
+- Combine elements from multiple proposals
+
+Do NOT repeat existing proposals unchanged.
+
+Respond with valid JSON only:
+{{
+  "ideas": [
     {{
-      "title": "...",
-      "description": "...",
-      "rationale": "...",
+      "title": "short title",
+      "description": "detailed description of what to change",
+      "rationale": "why this should work, addressing relevant critiques",
       "expected_impact": "small|medium|large"
     }}
   ]
@@ -115,25 +148,29 @@ Respond with valid JSON only:
 def build_vote_prompt(context: str, proposals_text: str, critiques_text: str) -> str:
     return f"""{context}
 
-# PROPOSALS
+# ALL PROPOSALS (anonymous)
 
 {proposals_text}
 
-# CRITIQUES
+# ALL CRITIQUES (anonymous)
 
 {critiques_text}
 
 # YOUR TASK
 
-Score every proposal from 1 (bad idea) to 5 (great idea, try this first).
-Consider the critiques and experiment history.
+Score every proposal from 0 (terrible, do not try) to 100 (excellent, try
+this first). Consider the critiques, experiment history, and how likely
+each idea is to improve the score.
+
+Use the full range: 0 for clearly bad ideas, 30-50 for mediocre, 60-80
+for promising, 90-100 for ideas you're confident will help.
 
 Respond with valid JSON only:
 {{
   "votes": [
     {{
       "proposal_id": 1,
-      "score": 4,
+      "score": 75,
       "reasoning": "brief reason"
     }}
   ]
