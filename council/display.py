@@ -85,3 +85,67 @@ def record(branch: str, proposer: str) -> str:
 
 def implement_start(title: str) -> str:
     return f"\n{ts()} {BOLD}{CYAN}IMPLEMENT{RESET}  Claude Code working on: {BOLD}\"{title}\"{RESET}"
+
+
+def context_info(
+    context_len: int,
+    best_score: float | None,
+    best_branch: str | None,
+    num_experiments: int,
+    num_ref_files: int,
+    target_file: str,
+) -> str:
+    lines = [
+        f"\n{ts()} {BOLD}{CYAN}CONTEXT{RESET}  Loading challenge state",
+        f"           Target: {BOLD}{target_file}{RESET}",
+        f"           Reference files: {num_ref_files}",
+        f"           Past experiments: {BOLD}{num_experiments}{RESET}",
+    ]
+    if best_branch:
+        lines.append(f"           Best so far: {BOLD}{GREEN}{best_score:.2f}{RESET} ({best_branch})")
+    else:
+        lines.append(f"           Best so far: {DIM}none (baseline){RESET}")
+    lines.append(f"           Context size: {context_len:,} chars")
+    return "\n".join(lines)
+
+
+def prompt_preview(phase_name: str, prompt: str, max_lines: int = 15) -> str:
+    """Show a preview of the prompt being sent to models."""
+    lines = prompt.split("\n")
+    # Show the EXPERIMENT HISTORY section and YOUR TASK section
+    preview_lines = []
+    in_section = False
+    section_count = 0
+    for line in lines:
+        if line.startswith("# EXPERIMENT HISTORY"):
+            in_section = True
+            preview_lines.append(f"  {BOLD}{YELLOW}─── Experiment History ───{RESET}")
+            continue
+        if line.startswith("# YOUR TASK") or line.startswith("# PROPOSALS") or line.startswith("# ALL PROPOSALS"):
+            in_section = True
+            preview_lines.append(f"  {BOLD}{YELLOW}─── {line.lstrip('# ')} ───{RESET}")
+            continue
+        if line.startswith("# ") and in_section:
+            in_section = False
+        if in_section:
+            stripped = line.strip()
+            if stripped:
+                if stripped.startswith("=== exp/"):
+                    # Branch header
+                    preview_lines.append(f"  {CYAN}{stripped}{RESET}")
+                elif stripped.startswith("=="):
+                    preview_lines.append(f"  {DIM}{stripped[:100]}{RESET}")
+                elif stripped.startswith("## Proposal"):
+                    preview_lines.append(f"  {BLUE}{stripped}{RESET}")
+                else:
+                    preview_lines.append(f"  {DIM}{stripped[:100]}{RESET}")
+                section_count += 1
+                if section_count > max_lines:
+                    preview_lines.append(f"  {DIM}... ({len(lines) - section_count} more lines){RESET}")
+                    break
+
+    if not preview_lines:
+        preview_lines.append(f"  {DIM}(prompt: {len(prompt):,} chars){RESET}")
+
+    header = f"{ts()} {BOLD}{MAGENTA}PROMPT → {phase_name}{RESET}  {DIM}({len(prompt):,} chars){RESET}"
+    return header + "\n" + "\n".join(preview_lines)

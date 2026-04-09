@@ -93,6 +93,7 @@ async def run_deliberation(
     log.info("STEP 1: PROPOSE — %d models x %d ideas", len(models), proposals_per_model)
     print(display.phase("PROPOSE", f"{len(models)} models x {proposals_per_model} ideas"))
     prompt = build_propose_prompt(context, proposals_per_model)
+    print(display.prompt_preview("PROPOSE", prompt))
     results = await call_all_models_typed(models, prompt, PROPOSE_TOOL, ProposeResponse)
     next_id = _collect_proposals(results, proposals, next_id)
 
@@ -109,6 +110,7 @@ async def run_deliberation(
     log.info("STEP 2: CRITIQUE — %d models reviewing %d proposals", len(models), len(proposals))
     print(display.phase("CRITIQUE", f"{len(models)} models reviewing {len(proposals)} proposals"))
     prompt = build_critique_prompt(context, proposals_text)
+    print(display.prompt_preview("CRITIQUE", prompt))
     results = await call_all_models_typed(models, prompt, CRITIQUE_TOOL, CritiqueResponse)
     _collect_critiques(results, proposals, all_critiques)
     critiques_text = format_critiques_anon(all_critiques)
@@ -117,6 +119,7 @@ async def run_deliberation(
     log.info("STEP 3: PROPOSE 2 — informed by critiques")
     print(display.phase("PROPOSE 2", f"{len(models)} models (informed by critiques)"))
     prompt = build_repropose_prompt(context, proposals_text, critiques_text, proposals_per_model)
+    print(display.prompt_preview("PROPOSE 2", prompt))
     results = await call_all_models_typed(models, prompt, PROPOSE_TOOL, ProposeResponse)
     before_p2 = len(proposals)
     next_id = _collect_proposals(results, proposals, next_id)
@@ -131,6 +134,7 @@ async def run_deliberation(
     log.info("STEP 4: CRITIQUE 2 — %d models reviewing %d proposals", len(models), len(proposals))
     print(display.phase("CRITIQUE 2", f"{len(models)} models reviewing {len(proposals)} proposals"))
     prompt = build_critique_prompt(context, proposals_text)
+    print(display.prompt_preview("CRITIQUE 2", prompt))
     results = await call_all_models_typed(models, prompt, CRITIQUE_TOOL, CritiqueResponse)
     _collect_critiques(results, proposals, all_critiques)
     critiques_text = format_critiques_anon(all_critiques)
@@ -140,6 +144,7 @@ async def run_deliberation(
     log.info("STEP 5: VOTE — %d models scoring %d proposals (0-100)", len(models), len(proposals))
     print(display.phase("VOTE", f"{len(models)} models scoring {len(proposals)} proposals (0-100)"))
     prompt = build_vote_prompt(context, proposals_text, critiques_text)
+    print(display.prompt_preview("VOTE", prompt))
     results = await call_all_models_typed(models, prompt, VOTE_TOOL, VoteResponse)
 
     vote_breakdown: dict[str, dict[int, int]] = {}
