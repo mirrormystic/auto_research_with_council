@@ -51,11 +51,20 @@ async def _call_via_tempo(body: dict, timeout: float) -> dict:
     )
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
-    if proc.returncode != 0:
-        err = stderr.decode().strip()
-        raise RuntimeError(f"tempo request failed (rc={proc.returncode}): {err}")
+    stdout_str = stdout.decode().strip()
+    stderr_str = stderr.decode().strip()
 
-    return json.loads(stdout.decode())
+    if proc.returncode != 0:
+        # Log everything for debugging
+        log.error("tempo request failed rc=%d model=%s", proc.returncode, body.get("model", "?"))
+        log.error("tempo stderr: %s", stderr_str or "(empty)")
+        log.error("tempo stdout: %s", stdout_str[:500] or "(empty)")
+        raise RuntimeError(
+            f"tempo request failed (rc={proc.returncode}) "
+            f"model={body.get('model', '?')}: {stderr_str or stdout_str or 'no output'}"
+        )
+
+    return json.loads(stdout_str)
 
 
 async def _call_via_api_key(body: dict, timeout: float) -> dict:

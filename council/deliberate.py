@@ -159,8 +159,14 @@ async def run_deliberation(
     random.shuffle(proposals)
     proposals.sort(key=lambda p: p.score, reverse=True)
 
+    # If no votes came in, just pick randomly
+    if not vote_breakdown:
+        log.warning("No votes received — picking random proposal")
+        print(f"\n  {display.YELLOW}No votes received — picking randomly{display.RESET}")
+        random.shuffle(proposals)
+
     # Show results
-    max_possible = len(vote_breakdown) * 100
+    max_possible = len(vote_breakdown) * 100 if vote_breakdown else 0
     log.info("Voting complete. Top proposals:")
     print()
     for i, p in enumerate(proposals[:5]):

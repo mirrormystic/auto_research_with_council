@@ -38,11 +38,19 @@ def implement_proposal(
     print(f"\n{display.DIM}{'─' * 60}")
     print(f"  Claude Code working...{display.RESET}\n")
 
-    result = subprocess.run(
-        ["claude", "-p", prompt, "--allowedTools", "Edit,Write,Read,Bash"],
-        cwd=challenge_dir,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--allowedTools", "Edit,Write,Read,Bash"],
+            cwd=challenge_dir,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"\n{display.DIM}{'─' * 60}{display.RESET}")
+        if stderr_handler:
+            log.addHandler(stderr_handler)
+        log.error("Claude Code timed out after 300s")
+        print(display.model_fail("Claude Code", "timed out after 300s"))
+        return False
 
     print(f"\n{display.DIM}{'─' * 60}{display.RESET}")
 
