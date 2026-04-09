@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 
 from council.logger import log
 from council.openrouter import call_all_models, extract_json
-from council.context import build_propose_prompt, build_critique_prompt, build_vote_prompt
+from council.context import build_propose_prompt, build_critique_prompt, build_repropose_prompt, build_vote_prompt
+from council import display
 
 
 @dataclass
@@ -15,7 +16,7 @@ class Proposal:
     description: str
     rationale: str
     expected_impact: str
-    source_model: str  # which model proposed it (hidden during deliberation)
+    source_model: str
     score: int = 0
     critiques: list[dict] = field(default_factory=list)
 
@@ -24,7 +25,7 @@ class Proposal:
 class DeliberationResult:
     proposals: list[Proposal]
     winner: Proposal
-    vote_breakdown: dict[str, dict[int, int]]  # model -> {proposal_id: score}
+    vote_breakdown: dict[str, dict[int, int]]
     all_critiques: list[dict]
 
 
@@ -33,28 +34,28 @@ async def _collect_proposals(
     proposals: list[Proposal],
     next_id: int,
 ) -> int:
-    """Parse proposals from model responses. Returns next available ID."""
     for model, text, elapsed in responses:
         short = model.split("/")[-1]
         data = extract_json(text)
         if data and "ideas" in data:
             count = 0
             for idea in data["ideas"]:
-                proposals.append(Proposal(
+                p = Proposal(
                     id=next_id,
                     title=idea.get("title", f"Idea {next_id}"),
                     description=idea.get("description", ""),
                     rationale=idea.get("rationale", ""),
                     expected_impact=idea.get("expected_impact", "medium"),
                     source_model=model,
-                ))
+                )
+                proposals.append(p)
                 next_id += 1
                 count += 1
             log.info("Model %s proposed %d ideas in %.1fs", short, count, elapsed)
-            print(f"  ✓ {short:20s} {count} ideas ({elapsed:.1f}s)")
+            print(display.model_ok(short, f"{count} ideas", elapsed))
         else:
-            log.warning("Model %s failed to return parseable proposals in %.1fs", short, elapsed)
-            print(f"  ✗ {short:20s} failed to parse ({elapsed:.1f}s)")
+            log.warning("Model %s failed to parse in %.1fs", short, elapsed)
+            print(display.model_fail(short, "failed to parse"))
     return next_id
 
 
@@ -62,16 +63,13 @@ async def _collect_critiques(
     responses: list[tuple[str, str, float]],
     proposals: list[Proposal],
     all_critiques: list[dict],
-) -> list[str]:
-    """Parse critiques from model responses. Returns formatted critique texts."""
-    critique_texts = []
+) -> None:
     for model, text, elapsed in responses:
         short = model.split("/")[-1]
         data = extract_json(text)
         if data:
             for c in data.get("critiques", []):
                 pid = c.get("proposal_id")
-                # Strip reviewer identity — critiques are anonymous too
                 c.pop("reviewer_model", None)
                 all_critiques.append(c)
                 for p in proposals:
@@ -79,23 +77,23 @@ async def _collect_critiques(
                         p.critiques.append(c)
             num_critiques = len(data.get("critiques", []))
             log.info("Model %s: %d critiques in %.1fs", short, num_critiques, elapsed)
+            print(display.model_ok(short, f"{num_critiques} critiques", elapsed))
+            # Show critiques
             for c in data.get("critiques", []):
-                log.info("  Critique on #%s: strengths=%s weaknesses=%s",
-                         c.get("proposal_id"), c.get("strengths", "")[:150], c.get("weaknesses", "")[:150])
-            # Anonymize the critique text before sharing
-            critique_texts.append(text)
-            print(f"  ✓ {short:20s} ({elapsed:.1f}s)")
+                pid = c.get("proposal_id", "?")
+                print(display.critique(0, pid,
+                    c.get("strengths", "")[:120],
+                    c.get("weaknesses", "")[:120]))
         else:
-            log.warning("Model %s failed to return parseable critiques", short)
-            print(f"  ✗ {short:20s} failed to parse ({elapsed:.1f}s)")
-    return critique_texts
+            log.warning("Model %s failed to parse critiques", short)
+            print(display.model_fail(short, "failed to parse"))
 
 
 async def run_deliberation(
     context: str,
     models: list[str],
     *,
-    rounds: int = 5,  # default: P C P C V = 5 steps
+    rounds: int = 5,
     proposals_per_model: int = 3,
     thinking: str = "extended",
 ) -> DeliberationResult:
@@ -104,11 +102,10 @@ async def run_deliberation(
     proposals: list[Proposal] = []
     all_critiques: list[dict] = []
     next_id = 1
-    critiques_text = ""
 
-    # ── STEP 1: PROPOSE (initial) ──
+    # ── STEP 1: PROPOSE ──
     log.info("STEP 1: PROPOSE — %d models x %d ideas", len(models), proposals_per_model)
-    print(f"\nPROPOSE  {len(models)} models x {proposals_per_model} ideas")
+    print(display.phase("PROPOSE", f"{len(models)} models x {proposals_per_model} ideas"))
     prompt = build_propose_prompt(context, proposals_per_model)
     responses = await call_all_models(models, prompt, thinking=thinking)
     next_id = await _collect_proposals(responses, proposals, next_id)
@@ -116,41 +113,48 @@ async def run_deliberation(
     if not proposals:
         raise RuntimeError("No proposals received from any model")
 
-    log.info("After P1: %d proposals", len(proposals))
+    # Show proposals
+    print()
     for p in proposals:
-        log.info("  #%d [%s]: \"%s\"", p.id, p.source_model.split("/")[-1], p.title)
+        print(display.proposal(p.id, p.title, p.description, p.expected_impact))
+    log.info("After P1: %d proposals", len(proposals))
 
     # ── STEP 2: CRITIQUE 1 ──
     proposals_text = format_proposals(proposals, anonymous=True)
-    log.info("STEP 2: CRITIQUE — %d models reviewing %d proposals (anon)", len(models), len(proposals))
-    print(f"\nCRITIQUE  {len(models)} models reviewing {len(proposals)} proposals")
+    log.info("STEP 2: CRITIQUE — %d models reviewing %d proposals", len(models), len(proposals))
+    print(display.phase("CRITIQUE", f"{len(models)} models reviewing {len(proposals)} proposals"))
     prompt = build_critique_prompt(context, proposals_text)
     responses = await call_all_models(models, prompt, thinking=thinking)
-    critique_texts = await _collect_critiques(responses, proposals, all_critiques)
+    await _collect_critiques(responses, proposals, all_critiques)
     critiques_text = format_critiques_anon(all_critiques)
 
-    # ── STEP 3: PROPOSE 2 (informed by critiques) ──
-    log.info("STEP 3: PROPOSE 2 — %d models proposing new ideas after seeing critiques", len(models))
-    print(f"\nPROPOSE 2  {len(models)} models (informed by critiques)")
+    # ── STEP 3: PROPOSE 2 ──
+    log.info("STEP 3: PROPOSE 2 — informed by critiques")
+    print(display.phase("PROPOSE 2", f"{len(models)} models (informed by critiques)"))
     prompt = build_repropose_prompt(context, proposals_text, critiques_text, proposals_per_model)
     responses = await call_all_models(models, prompt, thinking=thinking)
     next_id = await _collect_proposals(responses, proposals, next_id)
 
+    # Show new proposals
+    print()
+    for p in proposals:
+        if p.id >= next_id - len(responses) * proposals_per_model:
+            print(display.proposal(p.id, p.title, p.description, p.expected_impact))
     log.info("After P2: %d total proposals", len(proposals))
 
     # ── STEP 4: CRITIQUE 2 ──
     proposals_text = format_proposals(proposals, anonymous=True)
-    log.info("STEP 4: CRITIQUE 2 — %d models reviewing %d proposals (anon)", len(models), len(proposals))
-    print(f"\nCRITIQUE 2  {len(models)} models reviewing {len(proposals)} proposals")
+    log.info("STEP 4: CRITIQUE 2 — %d models reviewing %d proposals", len(models), len(proposals))
+    print(display.phase("CRITIQUE 2", f"{len(models)} models reviewing {len(proposals)} proposals"))
     prompt = build_critique_prompt(context, proposals_text)
     responses = await call_all_models(models, prompt, thinking=thinking)
-    critique_texts_2 = await _collect_critiques(responses, proposals, all_critiques)
+    await _collect_critiques(responses, proposals, all_critiques)
     critiques_text = format_critiques_anon(all_critiques)
 
     # ── STEP 5: VOTE ──
     proposals_text = format_proposals(proposals, anonymous=True)
     log.info("STEP 5: VOTE — %d models scoring %d proposals (0-100)", len(models), len(proposals))
-    print(f"\nVOTE  {len(models)} models scoring {len(proposals)} proposals (0-100)")
+    print(display.phase("VOTE", f"{len(models)} models scoring {len(proposals)} proposals (0-100)"))
     prompt = build_vote_prompt(context, proposals_text, critiques_text)
     responses = await call_all_models(models, prompt, thinking=thinking)
 
@@ -169,22 +173,22 @@ async def run_deliberation(
                         p.score += score
             vote_breakdown[model] = model_votes
             log.info("Model %s votes: %s", short, model_votes)
-            print(f"  ✓ {short:20s} ({elapsed:.1f}s)")
+            print(display.model_ok(short, "voted", elapsed))
         else:
-            log.warning("Model %s failed to return parseable votes", short)
-            print(f"  ✗ {short:20s} failed to parse ({elapsed:.1f}s)")
+            log.warning("Model %s failed to parse votes", short)
+            print(display.model_fail(short, "failed to parse votes"))
 
     # Sort by score, break ties randomly
     random.shuffle(proposals)
     proposals.sort(key=lambda p: p.score, reverse=True)
 
-    # Print top 3
+    # Show results
     max_possible = len(vote_breakdown) * 100
     log.info("Voting complete. Top proposals:")
     print()
-    for i, p in enumerate(proposals[:3]):
+    for i, p in enumerate(proposals[:5]):
         log.info("  #%d \"%s\" score=%d/%d (by %s)", i + 1, p.title, p.score, max_possible, p.source_model)
-        print(f"  #{i + 1}  \"{p.title}\"  Score: {p.score}/{max_possible}")
+        print(display.vote_result(i + 1, p.title, p.score, max_possible))
 
     return DeliberationResult(
         proposals=proposals,
@@ -208,7 +212,6 @@ def format_proposals(proposals: list[Proposal], *, anonymous: bool) -> str:
 
 
 def format_critiques_anon(critiques: list[dict]) -> str:
-    """Format critiques without revealing who wrote them."""
     parts = []
     for i, c in enumerate(critiques):
         pid = c.get("proposal_id", "?")

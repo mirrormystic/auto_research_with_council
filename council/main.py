@@ -10,6 +10,7 @@ from council.logger import log
 from council.config import parse_program_md, load_council_config, ChallengeConfig, CouncilConfig
 from council.context import build_context
 from council.deliberate import run_deliberation, DeliberationResult
+from council import display
 from council.git import (
     get_current_best,
     create_experiment_branch,
@@ -91,9 +92,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         best_display = f"{best_score:.2f}" if best_score else "none"
 
         log.info("=== COUNCIL ROUND %d === Best: %s", round_num, best_display)
-        print(f"\n{'=' * 55}")
-        print(f"  COUNCIL ROUND {round_num}  |  Best: {best_display}")
-        print(f"{'=' * 55}")
+        print(display.header(round_num, best_display))
 
         # 1. Build context
         log.info("Building context from challenge dir")
@@ -111,7 +110,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
             )
         except RuntimeError as e:
             log.error("Deliberation failed: %s", e)
-            print(f"\n  ✗ Deliberation failed: {e}")
+            print(display.model_fail("DELIBERATION", str(e)))
             print("  Retrying in next round...")
             continue
 
@@ -119,7 +118,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         implemented = False
         for proposal in result.proposals[:3]:
             log.info("Attempting implementation: \"%s\" (by %s, score=%d)", proposal.title, proposal.source_model, proposal.score)
-            print(f"\nIMPLEMENT  Claude Code working on: \"{proposal.title}\"")
+            print(display.implement_start(proposal.title))
             ok = implement_proposal(challenge_dir, challenge, proposal.description)
             if ok:
                 # Update winner to the one that actually compiled
@@ -130,7 +129,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
 
         if not implemented:
             log.warning("All top 3 proposals failed to implement, skipping round")
-            print("  ✗ All top proposals failed to implement. Skipping round.")
+            print(display.model_fail("IMPLEMENT", "All top proposals failed. Skipping round."))
             checkout_main(challenge_dir)
             continue
 
@@ -147,10 +146,9 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         elif score is not None and best_score is None:
             is_improvement = True
 
-        marker = " <- NEW BEST" if is_improvement else ""
         if score is not None:
             log.info("Score: %.2f (best: %s) %s", score, best_display, "NEW BEST" if is_improvement else "")
-            print(f"  Score: {score:.2f}{marker}")
+            print(display.score_line(score, is_improvement))
 
         # Get diff for commit message
         import subprocess
@@ -172,8 +170,7 @@ async def run_loop(challenge_dir: Path, challenge: ChallengeConfig, council: Cou
         # Print record
         proposer = result.winner.source_model.split("/")[-1]
         log.info("Recorded experiment: exp/%s (proposed by %s)", branch_name, proposer)
-        print(f"\nRECORD -> exp/{branch_name}")
-        print(f"  Proposed by: {proposer}")
+        print(display.record(branch_name, proposer))
 
         checkout_main(challenge_dir)
         log.info("Returned to main branch, starting next round")
