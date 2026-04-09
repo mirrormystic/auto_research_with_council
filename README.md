@@ -304,6 +304,23 @@ Describe the problem here. The models see this entire file...
 
 See [GUIDE.md](GUIDE.md) for the full format or `examples/amm-challenge/` for a working example.
 
+## Next Version Demo
+
+Interactive terminal demo showing the next version's UI — a retro-style TUI where you can watch the council deliberate, chat with agents, and trigger deep research. No LLM calls, all simulated with real experiment data.
+
+```bash
+uv sync --extra demo
+uv run council-demo
+```
+
+| Key | Action |
+|-----|--------|
+| Space | Advance one step |
+| A | Auto-run (watch it go) |
+| C | Open chat with agents |
+| R | Open deep research prompt |
+| Q | Quit |
+
 ## Architecture
 
 - **Structured output**: Pydantic schemas → OpenRouter tool calling → validated typed responses

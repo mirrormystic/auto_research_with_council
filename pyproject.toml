@@ -11,6 +11,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tempo = ["pympp[tempo]>=0.6.0"]
+demo = ["textual>=1.0.0"]
 
 [tool.uv]
 package = true
@@ -21,3 +22,4 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 council = "council.main:cli"
+council-demo = "next_version_demo.app:main"
