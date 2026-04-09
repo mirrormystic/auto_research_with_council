@@ -99,6 +99,7 @@ def stream_claude(prompt: str, cwd: str) -> int:
             "claude", "-p", prompt,
             "--allowedTools", "Edit,Write,Read,Bash,WebFetch",
             "--output-format", "stream-json",
+            "--verbose",
         ],
         cwd=cwd,
         stdout=subprocess.PIPE,

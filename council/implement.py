@@ -18,6 +18,7 @@ def _stream_claude(prompt: str, cwd: Path, timeout: int = 300) -> int:
             "claude", "-p", prompt,
             "--allowedTools", "Edit,Write,Read,Bash",
             "--output-format", "stream-json",
+            "--verbose",
         ],
         cwd=str(cwd),
         stdout=subprocess.PIPE,
