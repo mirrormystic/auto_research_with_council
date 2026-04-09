@@ -187,7 +187,7 @@ async def call_model_typed(
             "model": model,
             "messages": [{"role": "user", "content": json_prompt}],
             "temperature": 0.7,
-            "max_tokens": 4096,
+            "max_tokens": 16384,  # Gemini needs more tokens (thinking uses output tokens)
             "response_format": {"type": "json_object"},
         }
         log.info("Using JSON mode for %s (tool calling not supported)", model)
@@ -225,9 +225,27 @@ async def call_all_models_typed(
     tool: dict,
     response_model: type[T],
 ) -> list[tuple[str, T, float]]:
-    """Call all models in parallel with tool calling. Returns only successful results."""
-    tasks = [call_model_typed(m, prompt, tool, response_model) for m in models]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    """Call all models with tool calling. Returns only successful results.
+
+    When using Tempo, requests run sequentially (one channel, can't parallel).
+    With API key, requests run in parallel.
+    """
+    use_tempo = _use_tempo()
+
+    if use_tempo:
+        # Sequential — Tempo payment channel can't handle parallel requests
+        log.info("Tempo mode: running %d model calls sequentially", len(models))
+        results = []
+        for m in models:
+            try:
+                r = await call_model_typed(m, prompt, tool, response_model)
+                results.append(r)
+            except Exception as e:
+                results.append(e)
+    else:
+        # Parallel — API key handles concurrent requests fine
+        tasks = [call_model_typed(m, prompt, tool, response_model) for m in models]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
     good: list[tuple[str, T, float]] = []
     for r in results:
