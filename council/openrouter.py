@@ -18,8 +18,8 @@ TEMPO_BIN = str(Path.home() / ".tempo" / "bin" / "tempo")
 
 
 def _use_tempo() -> bool:
-    """Check if Tempo wallet is logged in."""
-    return TEMPO_KEYS_PATH.exists() and not os.environ.get("OPENROUTER_API_KEY")
+    """Check if Tempo was explicitly requested via --tempo flag."""
+    return bool(os.environ.get("USE_TEMPO"))
 
 
 def get_api_key() -> str:

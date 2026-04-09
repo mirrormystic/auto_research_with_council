@@ -8,7 +8,7 @@ from pathlib import Path
 from council.logger import log
 from council.config import parse_program_md, load_council_config, ChallengeConfig, CouncilConfig
 from council.context import build_context
-from council.deliberate import run_deliberation, DeliberationResult, format_critiques
+from council.deliberate import run_deliberation, DeliberationResult
 from council.git import (
     get_current_best,
     create_experiment_branch,
@@ -186,11 +186,22 @@ def cli() -> None:
     run_parser.add_argument("--challenge", type=str, default=".", help="Path to challenge folder")
     run_parser.add_argument("--models", type=str, default=None, help="Comma-separated model list")
     run_parser.add_argument("--rounds", type=int, default=None, help="Deliberation rounds")
+    payment = run_parser.add_mutually_exclusive_group(required=True)
+    payment.add_argument("--tempo", action="store_true", help="Pay via Tempo MPP (requires `tempo wallet login`)")
+    payment.add_argument("--openrouter-key", type=str, metavar="KEY", help="OpenRouter API key")
 
     args = parser.parse_args()
     if args.command != "run":
         parser.print_help()
         sys.exit(1)
+
+    # Set payment method
+    if args.openrouter_key:
+        os.environ["OPENROUTER_API_KEY"] = args.openrouter_key
+        os.environ.pop("USE_TEMPO", None)
+    elif args.tempo:
+        os.environ["USE_TEMPO"] = "1"
+        os.environ.pop("OPENROUTER_API_KEY", None)
 
     challenge_dir = Path(args.challenge).resolve()
     program_path = challenge_dir / "program.md"
@@ -214,6 +225,7 @@ def cli() -> None:
     print(f"Models: {', '.join(m.split('/')[-1] for m in council.models)}")
     print(f"Rounds: {council.rounds}")
     print(f"Direction: {challenge.direction}")
+    print(f"Payment: {'Tempo MPP' if args.tempo else 'OpenRouter API key'}")
     print(f"Log file: council.log")
 
     asyncio.run(run_loop(challenge_dir, challenge, council))
