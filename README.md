@@ -308,6 +308,8 @@ See [GUIDE.md](GUIDE.md) for the full format or `examples/amm-challenge/` for a 
 
 Interactive terminal demo showing the next version's UI — a retro-style TUI where you can watch the council deliberate, chat with agents, and trigger deep research. No LLM calls, all simulated with real experiment data.
 
+![Council Demo Screenshot](demo-screenshot.png)
+
 ```bash
 uv sync --extra demo
 uv run council-demo
